@@ -6,16 +6,10 @@ const int spkPin = A1;
 const int ledPin = 4;
 const int ledNum = 12;
 
-#define cbi(sfr, bit) (_SFR_BYTE(sfr) &= ~_BV(bit))
-#define sbi(sfr, bit) (_SFR_BYTE(sfr) |= _BV(bit))
-
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(ledNum, ledPin, NEO_GRB + NEO_KHZ800);
 
 void setup()
 {
-//  sbi(ADCSRA, ADPS2);
-//  cbi(ADCSRA, ADPS1);
-//  cbi(ADCSRA, ADPS0);
   #if defined (__AVR_ATtiny85__)
     if (F_CPU == 16000000) clock_prescale_set(clock_div_1);
   #endif
@@ -108,22 +102,26 @@ float vol_current = 0;
 float vol_average = 0;
 int calibrated = 0;
 
-const int calibration_time = 2000;
+const int calibration_steps = 2000;
 const int volume_offset = 10;
 
 void loop() {
   aVal = analogRead(micPin);
   i++;
   
-  if (!calibrated && i <= calibration_time) {
+  if (!calibrated && i <= calibration_steps) {
     vol_background = (1 - al_background) * aVal + \
                       al_background * vol_background;
 
-    for(int k=0; k < strip.numPixels(); k++) {
-      strip.setPixelColor(k, Wheel(((k * 256 / strip.numPixels()) + i) & 255));
+    if (i % 100 == 0) {
+      float progress = (float) i / calibration_steps;
+      int k = (float) strip.numPixels() * progress;
+      uint32_t c = strip.Color(255 * (1 - progress), 255 * progress, 0);
+      strip.setPixelColor(k, c);
+      strip.show();
     }
-    strip.show();
-    calibrated = (i == calibration_time);
+    
+    calibrated = (i == calibration_steps);
   }
 
   if (calibrated) {

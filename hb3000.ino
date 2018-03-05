@@ -5,6 +5,9 @@ const int micPin = A0;
 const int spkPin = A1;
 const int ledPin = 4;
 const int ledNum = 12;
+const int cheatPin = 7;
+
+bool cheating = false;
 
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(ledNum, ledPin, NEO_GRB + NEO_KHZ800);
 
@@ -17,6 +20,12 @@ void setup()
   strip.begin();
 
   Serial.begin(9600);
+
+  pinMode(cheatPin, INPUT_PULLUP);
+}
+
+void read_input() {
+  cheating = digitalRead(cheatPin) == LOW;
 }
 
 uint32_t Wheel(byte WheelPos) {
@@ -63,6 +72,10 @@ const float goodnessThreshold = 0.75 * maxVol;
 int goodSteps = 0;
 
 static void updled(float vol) {
+  if ( cheating ) {
+    vol = maxVol;
+  }
+  
   // how many light?
   int activeLeds = floor(ledNum * (vol/maxVol));
 
@@ -106,6 +119,8 @@ const int calibration_steps = 2000;
 const int volume_offset = 10;
 
 void loop() {
+  read_input();
+  
   aVal = analogRead(micPin);
   i++;
   

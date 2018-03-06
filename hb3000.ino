@@ -1,10 +1,17 @@
 #include "FastLED.h"
 
+/* CONFIG */
 const int PIN_MIC = A0;
 const int PIN_LED = 4;
 const int LED_COUNT = 12;
 const int PIN_CHEAT = 7;
+/* END CONFIG */
 
+/**
+ * Blow detector class.
+ * 
+ * Class to handle microphone input to produce some usable volume value.
+ */
 class Mike {
   private:
     int pin;
@@ -28,8 +35,14 @@ Mike::Mike(int pin, float mean_factor) {
   this->mean = 0.0f;
 }
 
+/**
+ * Calibrate mic and find DC bias.
+ * 
+ * Get some measures from microphone and determine mean value to calibrate 
+ * DC bias. Can optionally report progress information to callback.
+ */
 void Mike::calibrate() {
-  int tmp = 0;
+  long tmp = 0;
   const int initial_reads = 100;
   for (int i=0; i<initial_reads; i++) {
     if ( this->progress_feedback ) {
@@ -38,10 +51,16 @@ void Mike::calibrate() {
     tmp += this->raw_read();
   }
   this->dc_bias = tmp / initial_reads;
-  Serial.print("Bias: ");
-  Serial.println(this->dc_bias);
+  // Serial.print("Bias: ");
+  // Serial.println(this->dc_bias);
 }
 
+/**
+ * Read volume and return current average volume.
+ * 
+ * Returns current volume measured by microphone, applies a running 
+ * mean to respect last few measurements.
+ */
 float Mike::read_mean() {
   float current = this->read_volume();
   this->mean = this->mean * this->mean_factor + current * (1.0f - this->mean_factor);
@@ -63,8 +82,6 @@ void setup() {
 
   FastLED.addLeds<WS2812B, PIN_LED, GRB>(leds, LED_COUNT);
 
-  // strip.begin();
-
   Serial.begin(9600);
 
   pinMode(PIN_CHEAT, INPUT_PULLUP);
@@ -72,11 +89,21 @@ void setup() {
   mike.calibrate();
 }
 
+/**
+ * Read user control inputs (not mic).
+ */
 void read_controls() {
+  static int i = 0;
+  ++i;
   cheating = digitalRead(PIN_CHEAT) == LOW;
+  if ( i % 64 == 0 ) {
+    // TODO: read poti values
+  }
 }
 
-
+/**
+ * Show rotating rainbow on all leds.
+ */
 void rainbow(int steps) {
   for ( int i=0; i<steps; i++ ) {
     uint8_t start_hue = i % 256;
@@ -85,6 +112,9 @@ void rainbow(int steps) {
   }
 }
 
+/**
+ * First part of leds in colour, others black.
+ */
 void partly(float part, const CRGB &colour) {
   // enforce 0 <= part <= 1
   part = max(0.f, min(1.f, part));
@@ -94,6 +124,9 @@ void partly(float part, const CRGB &colour) {
   FastLED.show();
 }
 
+/**
+ * Callback to show progress on calibration.
+ */
 void show_progress(float progress) {
   partly(progress, CRGB::Yellow);
 }
@@ -104,15 +137,12 @@ const int timeUntilGood = 2000;
 const float goodnessThreshold = 0.75 * maxVol;
 int goodSteps = 0;
 
-static void updled(float vol) {
+static void evaluate_volume(float vol) {
   if ( cheating ) {
     // you bloody cheater!
     vol = maxVol*0.8;
   }
   
-  // how many light?
-  int activeLeds = floor(LED_COUNT * (vol/maxVol));
-
   // how light colour??
   if ( vol >= goodnessThreshold ) {
     goodSteps += 1;
@@ -133,28 +163,24 @@ static void updled(float vol) {
   
   float progress = min(1.0, (float) goodSteps / timeUntilGood);
   CRGB colour = CRGB(255*(1.-progress), 255*progress, 0);
-  // uint32_t colour = strip.Color(255*(1.-progress), 255*progress, 0);
-  
-  for ( int i = 0; i < LED_COUNT; i++ ) {
-    if ( activeLeds > i ) {
-      leds[i] = colour;
-    } else {
-      leds[i] = CRGB::Black;
-    }
-  }
-  FastLED.show();
+
+  partly(vol/maxVol, colour);
 }
 
 int i = 0;
-const int volume_offset = 10;
+const int volume_offset = 15;
 
 void loop() {
   i++;
+  // handle user input on controls:
   read_controls();
-
+  // read volume
   float mean = mike.read_mean();
+  // require minimum to suppress blinking on standby
   float vol = max(0, mean - volume_offset);
-  updled(vol);
+  // evaluate measurement:
+  evaluate_volume(vol);
+  // log/debug:
   if ( i%100 == 1 ) {
     Serial.println(vol);
   }

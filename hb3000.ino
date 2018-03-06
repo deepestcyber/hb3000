@@ -1,11 +1,9 @@
 #include "FastLED.h"
 
-
-const int micPin = A0;
-const int spkPin = A1;
-const int ledPin = 4;
-const int ledNum = 12;
-const int cheatPin = 7;
+const int PIN_MIC = A0;
+const int PIN_LED = 4;
+const int LED_COUNT = 12;
+const int PIN_CHEAT = 7;
 
 class Mike {
   private:
@@ -53,7 +51,7 @@ float Mike::read_mean() {
 // --
 
 Mike mike(A0, 0.99);
-CRGB leds[ledNum];
+CRGB leds[LED_COUNT];
 
 bool cheating = false;
 
@@ -63,26 +61,26 @@ void setup() {
     if (F_CPU == 16000000) clock_prescale_set(clock_div_1);
   #endif
 
-  FastLED.addLeds<WS2812B, ledPin, GRB>(leds, ledNum);
+  FastLED.addLeds<WS2812B, PIN_LED, GRB>(leds, LED_COUNT);
 
   // strip.begin();
 
   Serial.begin(9600);
 
-  pinMode(cheatPin, INPUT_PULLUP);
+  pinMode(PIN_CHEAT, INPUT_PULLUP);
   mike.set_progress_feedback(show_progress);
   mike.calibrate();
 }
 
 void read_controls() {
-  cheating = digitalRead(cheatPin) == LOW;
+  cheating = digitalRead(PIN_CHEAT) == LOW;
 }
 
 
 void rainbow(int steps) {
   for ( int i=0; i<steps; i++ ) {
     uint8_t start_hue = i % 256;
-    fill_rainbow(leds, ledNum, start_hue, 256/ledNum);
+    fill_rainbow(leds, LED_COUNT, start_hue, 256/LED_COUNT);
     FastLED.show();
   }
 }
@@ -90,9 +88,9 @@ void rainbow(int steps) {
 void partly(float part, const CRGB &colour) {
   // enforce 0 <= part <= 1
   part = max(0.f, min(1.f, part));
-  int leds_on = floor(ledNum*part);
+  int leds_on = floor(LED_COUNT*part);
   fill_solid(leds, leds_on, colour);
-  fill_solid(leds + leds_on, ledNum-leds_on, CRGB::Black);
+  fill_solid(leds + leds_on, LED_COUNT-leds_on, CRGB::Black);
   FastLED.show();
 }
 
@@ -113,7 +111,7 @@ static void updled(float vol) {
   }
   
   // how many light?
-  int activeLeds = floor(ledNum * (vol/maxVol));
+  int activeLeds = floor(LED_COUNT * (vol/maxVol));
 
   // how light colour??
   if ( vol >= goodnessThreshold ) {
@@ -128,7 +126,7 @@ static void updled(float vol) {
     // reset progress
     goodSteps = 0;
     // clear:
-    fill_solid(leds, ledNum, CRGB::Black);
+    fill_solid(leds, LED_COUNT, CRGB::Black);
     FastLED.show();
     return;
   }
@@ -137,7 +135,7 @@ static void updled(float vol) {
   CRGB colour = CRGB(255*(1.-progress), 255*progress, 0);
   // uint32_t colour = strip.Color(255*(1.-progress), 255*progress, 0);
   
-  for ( int i = 0; i < ledNum; i++ ) {
+  for ( int i = 0; i < LED_COUNT; i++ ) {
     if ( activeLeds > i ) {
       leds[i] = colour;
     } else {

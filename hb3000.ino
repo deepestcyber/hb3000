@@ -1,4 +1,4 @@
-#include <Adafruit_NeoPixel.h>
+#include "FastLED.h"
 
 
 const int micPin = A0;
@@ -7,64 +7,90 @@ const int ledPin = 4;
 const int ledNum = 12;
 const int cheatPin = 7;
 
+CRGB leds[ledNum];
+
+class Mike {
+  private:
+    int pin;
+    int dc_bias;
+    float mean_factor;
+    float mean;
+  public:
+    Mike(int pin, float mean_factor);
+    int raw_read() { return analogRead(this->pin); }
+    int read_volume() { return abs(raw_read() - dc_bias); }
+    float read_mean();
+    void calibrate();
+};
+
+Mike::Mike(int pin, float mean_factor) {
+  this->pin = pin;
+  this->mean_factor = mean_factor;
+  this->dc_bias = 0;
+  this->mean = 0.0f;
+}
+
+void Mike::calibrate() {
+  int tmp = 0;
+  const int initial_reads = 100;
+  for (int i=0; i<initial_reads; i++) {
+    float progress = (float)i/initial_reads;
+    int leds_on = ledNum*progress;
+    for ( int j=0;j<ledNum; j++) {
+      if ( j<=leds_on ) {
+        leds[j] = CRGB::Yellow;
+      } else {
+        leds[j] = CRGB::Black;
+      }
+    }
+    FastLED.show();
+    tmp += this->raw_read();
+  }
+  this->dc_bias = tmp / initial_reads;
+  Serial.print("Bias: ");
+  Serial.println(this->dc_bias);
+}
+
+float Mike::read_mean() {
+  float current = this->read_volume();
+  this->mean = this->mean * this->mean_factor + current * (1.0f - this->mean_factor);
+  return this->mean;
+}
+
+// --
+
+Mike mike(A0, 0.99);
+
 bool cheating = false;
 
-Adafruit_NeoPixel strip = Adafruit_NeoPixel(ledNum, ledPin, NEO_GRB + NEO_KHZ800);
 
-void setup()
-{
+void setup() {
   #if defined (__AVR_ATtiny85__)
     if (F_CPU == 16000000) clock_prescale_set(clock_div_1);
   #endif
 
-  strip.begin();
+  FastLED.addLeds<WS2812B, ledPin, GRB>(leds, ledNum);
+
+  // strip.begin();
 
   Serial.begin(9600);
 
   pinMode(cheatPin, INPUT_PULLUP);
+  mike.calibrate();
 }
 
-void read_input() {
+void read_controls() {
   cheating = digitalRead(cheatPin) == LOW;
 }
 
-uint32_t Wheel(byte WheelPos) {
-  WheelPos = 255 - WheelPos;
-  if(WheelPos < 85) {
-    return strip.Color(255 - WheelPos * 3, 0, WheelPos * 3);
-  }
-  if(WheelPos < 170) {
-    WheelPos -= 85;
-    return strip.Color(0, WheelPos * 3, 255 - WheelPos * 3);
-  }
-  WheelPos -= 170;
-  return strip.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
-}
 
-static void rainbowSteps(uint16_t steps, uint8_t wait) {
-  uint16_t i;
-  for(uint16_t j=0; j < steps; j++) {
-    for(i=0; i< strip.numPixels(); i++) {
-      strip.setPixelColor(i, Wheel(((i * 256 / strip.numPixels()) + j) & 255));
-    }
-    strip.show();
-    delay(wait);
+void rainbow(int steps) {
+  for ( int i=0; i<steps; i++ ) {
+    uint8_t start_hue = i % 256;
+    fill_rainbow(leds, ledNum, start_hue, 256/ledNum);
+    FastLED.show();
   }
 }
-
-// Slightly different, this makes the rainbow equally distributed throughout
-static void rainbowCycle(uint8_t wait) {
-  uint16_t i, j;
-
-  for(j=0; j<256*5; j++) { // 5 cycles of all colors on wheel
-    for(i=0; i< strip.numPixels(); i++) {
-      strip.setPixelColor(i, Wheel(((i * 256 / strip.numPixels()) + j) & 255));
-    }
-    strip.show();
-    delay(wait);
-  }
-}
-
 
 const float maxVol = 60.0;
 const int timeUntilGood = 2000;
@@ -73,7 +99,8 @@ int goodSteps = 0;
 
 static void updled(float vol) {
   if ( cheating ) {
-    vol = maxVol;
+    // you bloody cheater!
+    vol = maxVol*0.8;
   }
   
   // how many light?
@@ -87,80 +114,41 @@ static void updled(float vol) {
   }
 
   if ( goodSteps >= timeUntilGood ) {
-    // do rainbow, candy mountain!
-    rainbowSteps(2000, 1);
+    // wow, I guess there actually is a place called candy mountain
+    rainbow(1500);
+    // reset progress
     goodSteps = 0;
+    // clear:
+    fill_solid(leds, ledNum, CRGB::Black);
+    FastLED.show();
     return;
   }
   
   float progress = min(1.0, (float) goodSteps / timeUntilGood);
-  uint32_t colour = strip.Color(255*(1.-progress), 255*progress, 0);
+  CRGB colour = CRGB(255*(1.-progress), 255*progress, 0);
+  // uint32_t colour = strip.Color(255*(1.-progress), 255*progress, 0);
   
   for ( int i = 0; i < ledNum; i++ ) {
     if ( activeLeds > i ) {
-      strip.setPixelColor(i, colour);
+      leds[i] = colour;
     } else {
-      strip.setPixelColor(i, strip.Color(0, 0, 0));
+      leds[i] = CRGB::Black;
     }
   }
-  strip.show();
+  FastLED.show();
 }
 
-int aVal = 0;
-float al_background = 0.99;
-float al_current = 0.99;
 int i = 0;
-float vol_background = 0.;
-float vol_current = 0;
-float vol_average = 0;
-int calibrated = 0;
-
-const int calibration_steps = 2000;
 const int volume_offset = 10;
 
 void loop() {
-  read_input();
-  
-  aVal = analogRead(micPin);
   i++;
-  
-  if (!calibrated && i <= calibration_steps) {
-    vol_background = (1 - al_background) * aVal + \
-                      al_background * vol_background;
+  read_controls();
 
-    if (i % 100 == 0) {
-      float progress = (float) i / calibration_steps;
-      int k = (float) strip.numPixels() * progress;
-      uint32_t c = strip.Color(255 * (1 - progress), 255 * progress, 0);
-      strip.setPixelColor(k, c);
-      strip.show();
-    }
-    
-    calibrated = (i == calibration_steps);
-  }
-
-  if (calibrated) {
-    vol_current = abs(aVal - vol_background);
-    vol_average = (1 - al_current) * vol_current + al_current * vol_average; 
-  }
-
-  float vol = max(0, vol_average - volume_offset);
-  if (calibrated) {
-    updled(vol);
-  }
-  
-  if (i % 100 == 0) {
-    if (!calibrated) {
-      Serial.print("IN CALIBRATION -- ");
-    }
-    Serial.print("sensor slow = ");
-    Serial.print(vol_background);
-    Serial.print(", sensor fast = ");
-    Serial.print(vol_current);
-    Serial.print(", volume avg = ");
-    Serial.print(vol_average);
-    Serial.print(", volume = ");
-    Serial.print(vol);
-    Serial.println();
+  float mean = mike.read_mean();
+  float vol = max(0, mean - volume_offset);
+  updled(vol);
+  if ( i%100 == 1 ) {
+    Serial.println(vol);
   }
 }

@@ -7,20 +7,20 @@ const int ledPin = 4;
 const int ledNum = 12;
 const int cheatPin = 7;
 
-CRGB leds[ledNum];
-
 class Mike {
   private:
     int pin;
     int dc_bias;
     float mean_factor;
     float mean;
+    void (*progress_feedback)(float progress);
   public:
     Mike(int pin, float mean_factor);
     int raw_read() { return analogRead(this->pin); }
     int read_volume() { return abs(raw_read() - dc_bias); }
     float read_mean();
     void calibrate();
+    void set_progress_feedback(void (*f)(float)) { this->progress_feedback = f; }
 };
 
 Mike::Mike(int pin, float mean_factor) {
@@ -34,16 +34,9 @@ void Mike::calibrate() {
   int tmp = 0;
   const int initial_reads = 100;
   for (int i=0; i<initial_reads; i++) {
-    float progress = (float)i/initial_reads;
-    int leds_on = ledNum*progress;
-    for ( int j=0;j<ledNum; j++) {
-      if ( j<=leds_on ) {
-        leds[j] = CRGB::Yellow;
-      } else {
-        leds[j] = CRGB::Black;
-      }
+    if ( this->progress_feedback ) {
+      this->progress_feedback((float)i/initial_reads);
     }
-    FastLED.show();
     tmp += this->raw_read();
   }
   this->dc_bias = tmp / initial_reads;
@@ -60,6 +53,7 @@ float Mike::read_mean() {
 // --
 
 Mike mike(A0, 0.99);
+CRGB leds[ledNum];
 
 bool cheating = false;
 
@@ -76,6 +70,7 @@ void setup() {
   Serial.begin(9600);
 
   pinMode(cheatPin, INPUT_PULLUP);
+  mike.set_progress_feedback(show_progress);
   mike.calibrate();
 }
 
@@ -91,6 +86,20 @@ void rainbow(int steps) {
     FastLED.show();
   }
 }
+
+void partly(float part, const CRGB &colour) {
+  // enforce 0 <= part <= 1
+  part = max(0.f, min(1.f, part));
+  int leds_on = floor(ledNum*part);
+  fill_solid(leds, leds_on, colour);
+  fill_solid(leds + leds_on, ledNum-leds_on, CRGB::Black);
+  FastLED.show();
+}
+
+void show_progress(float progress) {
+  partly(progress, CRGB::Yellow);
+}
+
 
 const float maxVol = 60.0;
 const int timeUntilGood = 2000;
